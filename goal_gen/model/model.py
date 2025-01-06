@@ -13,12 +13,13 @@
 # limitations under the License.
 #!/usr/bin/env python
 # coding=utf-8
+import os
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 import torch
 import torch.nn as nn
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from diffusers.training_utils import EMAModel
 from transformers import T5Tokenizer, T5EncoderModel
-import os
 #  modified from https://github.com/huggingface/diffusers/blob/main/examples/instruct_pix2pix/train_instruct_pix2pix.py
 class IP2P(nn.Module):
     """InstructPix2Pix model."""
@@ -30,15 +31,16 @@ class IP2P(nn.Module):
                  gradient_checkpointing=False):
         super().__init__()
         self.device = device
+        model_id = "timbrooks/instruct-pix2pix"
         self.noise_scheduler = DDPMScheduler.from_pretrained(
-            pretrained_model_dir, subfolder="scheduler")
+            model_id, subfolder="scheduler")
         text_encoder_name = "t5-base"
         self.tokenizer = T5Tokenizer.from_pretrained(text_encoder_name)
         self.text_encoder = T5EncoderModel.from_pretrained(text_encoder_name) 
         self.vae = AutoencoderKL.from_pretrained(
-            pretrained_model_dir, subfolder="vae")
+            model_id, subfolder="vae")
         self.unet = UNet2DConditionModel.from_pretrained(
-            pretrained_model_dir, subfolder="unet")
+            model_id, subfolder="unet")
         
         # InstructPix2Pix uses an additional image for conditioning. To accommodate that,
         # it uses 8 channels (instead of 4) in the first (conv) layer of the UNet. This UNet is

@@ -99,7 +99,7 @@ class CalvinDataset_Goalgen(Dataset):
         edit_prompt= self.meta[traj_id]['text']
 
         # input image
-        input_image_path = os.path.join(self.data_dir, f"{traj_id}", f"{frame_id}_static.png")
+        input_image_path = os.path.join(self.data_dir, f"episode{traj_id}", f"{frame_id}_head.png")
         input_image = Image.open(input_image_path).convert("RGB")
 
         # goal image
@@ -108,7 +108,7 @@ class CalvinDataset_Goalgen(Dataset):
    
 
         assert edited_frame_id < n_frames
-        edited_image_path = os.path.join(self.data_dir, f"{traj_id}", f"{edited_frame_id}_static.png")
+        edited_image_path = os.path.join(self.data_dir, f"episode{traj_id}", f"{edited_frame_id}_head.png")
         edited_image = Image.open(edited_image_path).convert("RGB")
         
         bright_range=random.uniform(0.8,1.2)
