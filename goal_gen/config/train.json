@@ -1,14 +1,14 @@
 {
     "exp_name": "train_goal_gen",
     "seed": 123,
-    "batch_size": 64,
+    "batch_size": 1,
     "learning_rate": 8e-5,
     "min_lr_scale": 1.0,
     "warmup_steps": 800,
     "device": "cuda",
-    "num_workers": 10,
+    "num_workers": 1,
     "save_epoch": 1,
-    "pretrained_model_dir": "PATH_TO/resources/IP2P/instruct-pix2pix",
+    "pretrained_model_dir": "instruct-pix2pix",
     "ckpt_root": "SAVE_PATH/goal_gen/checkpoints/",
     "log_root": "LOG_PATH/goal_gen/logs/",
     "resume": null,
@@ -26,7 +26,6 @@
 
     "trainer": {
         "accelerator": "gpu",
-        "strategy": "ddp",
         "precision": "bf16",
         "logger": ["tensorboard"],
         "use_distributed_sampler": true,

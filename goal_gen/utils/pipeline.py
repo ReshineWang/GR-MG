@@ -47,7 +47,7 @@ class Pipeline(StableDiffusionInstructPix2PixPipeline):
         safety_checker,
         feature_extractor,
         image_encoder=None,
-        requires_safety_checker=True,
+        requires_safety_checker=False,
     ):
         super().__init__(
             vae,

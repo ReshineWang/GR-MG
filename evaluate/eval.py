@@ -157,7 +157,7 @@ def rollout(env, model, task_oracle, subtask, val_annotations, subtask_i, sequen
 def main():
     seed_everything(0, workers=True)  # type:ignore
     parser = argparse.ArgumentParser(description="Evaluate a trained model on multistep sequences with language goals.")
-    parser.add_argument("--dataset_path", default='/mnt/bn/robotics/manipulation_data/calvin_data/task_ABC_D',
+    parser.add_argument("--dataset_path", default='/home/wangrx/Projects/GR-MG/resources/calvin_debug_dataset',
                         type=str, help="Path to the dataset root directory.")  # modify it before opensource
     # evaluation
     parser.add_argument('--config_path', type=str, default="", help='path to the policy config file')

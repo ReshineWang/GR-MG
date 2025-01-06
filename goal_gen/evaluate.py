@@ -17,6 +17,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 import torch
+
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 import torchvision.transforms as transforms
 from transformers import T5Tokenizer, T5EncoderModel
 from diffusers import AutoencoderKL, UNet2DConditionModel
@@ -27,21 +30,26 @@ class IP2PEvaluation(object):
                  ckpt_path,
                  res=256):    
         # Init models
-        pretrained_model_dir = "/mnt/bn/lpy-lq/stable_diffusion/instruct-pix2pix"
-        
-        self.tokenizer = T5Tokenizer.from_pretrained("t5-base")
-        self.text_encoder = T5EncoderModel.from_pretrained("t5-base")
+        pretrained_model_dir = "/home/wangrx/Projects/GR-MG/instruct-pix2pix"
+        t5_model_dir = "/home/wangrx/Projects/GR-MG/t5-base"
+        self.tokenizer = T5Tokenizer.from_pretrained(t5_model_dir)
+        self.text_encoder = T5EncoderModel.from_pretrained(t5_model_dir)
         self.vae = AutoencoderKL.from_pretrained(
             pretrained_model_dir, subfolder="vae")
         self.unet = UNet2DConditionModel.from_pretrained(
             pretrained_model_dir, subfolder="unet")
 
-        # Load weight for unet
-        payload = torch.load(ckpt_path)
+        # Load weight for unet on CPU
+        payload = torch.load(ckpt_path, map_location=torch.device('cpu'))
         state_dict = payload['state_dict']
         del payload
         msg = self.unet.load_state_dict(state_dict['unet_ema'], strict=True)
         print(msg)
+
+        # Move models to GPU
+        self.vae.to('cuda')
+        self.unet.to('cuda')
+        self.text_encoder.to('cuda')
 
         self.pipe = Pipeline.from_pretrained(
             pretrained_model_dir,
@@ -130,7 +138,7 @@ class IP2PEvaluation(object):
             generator=self.generator,
             safety_checker=None,
             requires_safety_checker=False).images
-        edited_images=[ np.array(image) for image in edited_images]
+        edited_images = [np.array(image) for image in edited_images]
 
         return edited_images
 

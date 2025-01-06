@@ -86,7 +86,7 @@ class Policy_Trainer(pl.LightningModule):
         # mae model
         model_mae = vits.__dict__['vit_base'](patch_size=16, num_classes=0)
         model_mae.to(self.device)
-        mae_ckpt = '/PATH_TO/resources/MAE/mae_pretrain_vit_base.pth'
+        mae_ckpt = 'resources/mae_pretrain_vit_base.pth'
         checkpoint = torch.load(mae_ckpt, map_location='cpu')
         model_mae.load_state_dict(checkpoint['model'], strict=True)
         # freeze mae

@@ -22,8 +22,8 @@ import numpy as np
 import cv2
 
 
-SPLITS = ['training']
-# SPLITS = ['validation']
+#SPLITS = ['training']
+SPLITS = ['validation']
 def main(data_dir, target_dir, num_trajs_per_task=10000):
     for split in SPLITS:
         meta = dict()
@@ -33,7 +33,7 @@ def main(data_dir, target_dir, num_trajs_per_task=10000):
         anns = np.load(
             os.path.join(dataset_dir, "lang_annotations", "auto_lang_ann.npy"), 
             allow_pickle=True).item()
-        n_trajs = len(anns['info']['indx'])
+        n_trajs = len(anns['info']['indx']) # 获取任务数量
         task_dict = {}
         for traj_idx in tqdm(range(n_trajs)):
             if split == 'training':
@@ -44,19 +44,19 @@ def main(data_dir, target_dir, num_trajs_per_task=10000):
                 else:
                     task_dict[traj_task] = task_dict[traj_task] + 1
                 if task_dict[traj_task] > num_trajs_per_task:
-                    continue
+                    continue  # 确保每个任务的轨迹数量不超过 num_trajs_per_task
 
             traj_dir = os.path.join(split_dir, f"{traj_idx}")
             os.mkdir(traj_dir)
-            traj_st, traj_ed = anns['info']['indx'][traj_idx]
-            traj_text = anns['language']['ann'][traj_idx]
-            for i in range(traj_st, traj_ed + 1):
+            traj_st, traj_ed = anns['info']['indx'][traj_idx] # 获取轨迹的起始和结束帧
+            traj_text = anns['language']['ann'][traj_idx] # 获取轨迹的文本描述
+            for i in range(traj_st, traj_ed + 1): # 遍历轨迹的每一帧
                 frame = np.load(os.path.join(dataset_dir, f"episode_{i:07d}.npz"))
                 static_rgb = frame['rgb_static']
                 hand_rgb = frame['rgb_gripper']
                 cv2.imwrite(os.path.join(traj_dir, f"{i - traj_st}_static.png"), cv2.cvtColor(static_rgb, cv2.COLOR_BGR2RGB))
                 cv2.imwrite(os.path.join(traj_dir, f"{i - traj_st}_hand.png"), cv2.cvtColor(hand_rgb, cv2.COLOR_BGR2RGB))
-            meta[traj_idx] = {"text": traj_text, "num_frames": int(traj_ed - traj_st + 1)}
+            meta[traj_idx] = {"text": traj_text, "num_frames": int(traj_ed - traj_st + 1)} # 记录每个任务的文本描述和轨迹帧数
         with open(os.path.join(split_dir, "meta.json"), "w") as f:
             json.dump(meta, f)
 

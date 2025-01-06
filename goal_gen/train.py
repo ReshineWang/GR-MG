@@ -16,6 +16,9 @@ import os
 import argparse
 import json
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import importlib
 import copy
 import numpy as np
@@ -44,10 +47,10 @@ def init_setup_callback(config):
 
 def init_trainer_config(configs):
     trainer_config = copy.deepcopy(configs['trainer'])
-    trainer_config['devices'] = configs.get('gpus', 'auto')
+    trainer_config['devices'] = configs.get('gpus', 1)
     trainer_config['num_nodes'] = configs.get('num_nodes', 1)
-    if 'strategy' not in trainer_config or trainer_config['strategy'] == 'ddp':
-        trainer_config['strategy'] = DDPStrategy(find_unused_parameters=False)
+    if 'strategy' in trainer_config:
+        del trainer_config['strategy']  # 删除 strategy 键
     exp_name = configs['exp_name']
 
     # init loggers
@@ -66,7 +69,7 @@ def init_trainer_config(configs):
     trainer_config['callbacks'] = [
         init_setup_callback(configs),
         LearningRateMonitor(logging_interval='step'),
-        ModelCheckpoint(dirpath=ckpt_dir, save_top_k=-1,every_n_epochs=1)
+        ModelCheckpoint(dirpath=ckpt_dir, save_top_k=-1, every_n_epochs=configs["trainer"]["save_epoch"]) # if you have only limited space, just set save_top_k=1 to save the best model
     ]
     return trainer_config
 
@@ -90,7 +93,7 @@ def experiment(variant):
 
     # dataset
     train_data= CalvinDataset_Goalgen(
-                data_dir="/PATH_TO_CALVIN/calvin/task_ABC_D/",
+                data_dir="/home/wangrx/Projects/RoboTwin/policy/Diffusion-Policy/data/block_hammer_beat_L515_100_png",
                 resolution=256,
                 resolution_before_crop=288,
                 center_crop=False,
@@ -98,8 +101,9 @@ def experiment(variant):
                 use_full=True,
                 is_training=True,
                 color_aug=True)
+    #import pdb; pdb.set_trace()
     val_data= CalvinDataset_Goalgen(
-                data_dir="/PATH_TO_CALVIN/calvin/task_ABC_D/",
+                data_dir="resources/calvin_format",
                 resolution=256,
                 resolution_before_crop=288,
                 center_crop=False,
@@ -184,7 +188,7 @@ def parse_args():
     
     # Trainer
     trainer_parser = parser.add_argument_group('trainer')
-    trainer_parser.add_argument('--strategy', default=None, type=str)
+    #trainer_parser.add_argument('--strategy', default=None, type=str)
     trainer_parser.add_argument('--precision', default=None, type=str)
     trainer_parser.add_argument('--gradient_clip_val', default=None, type=float)
     trainer_parser.add_argument('--max_epochs', default=None, type=int)
@@ -205,6 +209,8 @@ def parse_args():
 
 if __name__ == '__main__':
     args=parse_args()
+            # 插入断点
+    #import pdb; pdb.set_trace()
     configs = load_config(args.pop('config'))
     configs = update_configs(configs, args)
     os.system(f"sudo chmod 777 -R {configs['ckpt_root']}")
