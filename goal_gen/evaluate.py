@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,24 +28,28 @@ class IP2PEvaluation(object):
                  ckpt_path,
                  res=256):    
         # Init models
-        pretrained_model_dir = "/mnt/bn/lpy-lq/stable_diffusion/instruct-pix2pix"
+        model_id = "timbrooks/instruct-pix2pix"
+        t5_model_id = "t5-base"
         
-        self.tokenizer = T5Tokenizer.from_pretrained("t5-base")
-        self.text_encoder = T5EncoderModel.from_pretrained("t5-base")
-        self.vae = AutoencoderKL.from_pretrained(
-            pretrained_model_dir, subfolder="vae")
-        self.unet = UNet2DConditionModel.from_pretrained(
-            pretrained_model_dir, subfolder="unet")
+        self.tokenizer = T5Tokenizer.from_pretrained(t5_model_id)
+        self.text_encoder = T5EncoderModel.from_pretrained(t5_model_id)
+        self.vae = AutoencoderKL.from_pretrained(model_id, subfolder="vae")
+        self.unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet")
 
-        # Load weight for unet
-        payload = torch.load(ckpt_path)
+        # Load weight for unet on CPU
+        payload = torch.load(ckpt_path, map_location=torch.device('cpu'))
         state_dict = payload['state_dict']
         del payload
         msg = self.unet.load_state_dict(state_dict['unet_ema'], strict=True)
         print(msg)
 
+        # Move models to GPU
+        self.vae.to('cuda')
+        self.unet.to('cuda')
+        self.text_encoder.to('cuda')
+
         self.pipe = Pipeline.from_pretrained(
-            pretrained_model_dir,
+            model_id,
             text_encoder=self.text_encoder,
             tokenizer=self.tokenizer,
             vae=self.vae,
@@ -75,7 +80,7 @@ class IP2PEvaluation(object):
             resolution=256,
             resolution_before_crop=288,
             center_crop=True,
-            forward_n_min_max=(20, 22), 
+            forward_n_min_max=(60, 62), 
             is_training=is_training,
             use_full=True,
             color_aug=False
@@ -130,7 +135,7 @@ class IP2PEvaluation(object):
             generator=self.generator,
             safety_checker=None,
             requires_safety_checker=False).images
-        edited_images=[ np.array(image) for image in edited_images]
+        edited_images = [np.array(image) for image in edited_images]
 
         return edited_images
 

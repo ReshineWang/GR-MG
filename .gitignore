@@ -1,3 +1,7 @@
 resources
-SAVE_PATH
+instruct-pix2pix
 LOG_PATH
+SAVE_PATH
+t5-base
+aloha_maniskill_sim
+models

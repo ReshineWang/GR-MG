@@ -573,7 +573,7 @@ class GR_MG(nn.Module):
         return prediction
     
 
-    def evaluate(self, input_dict,original_gripper=False,return_progress=False):
+    def evaluate(self, input_dict,original_gripper=False,Linear_Normalization=True,return_progress=False):
 
         attention_mask = input_dict['attention_mask']
         prediction = self.forward(input_dict, is_training=False)
@@ -593,10 +593,22 @@ class GR_MG(nn.Module):
         arm_action_pred = arm_action_preds[-1].cpu() # (act_len, act_dim-1)
         arm_action_pred = arm_action_pred[0] # (act_dim-1, )
         gripper_action_pred = gripper_action_preds[-1:].cpu() # (1, act_len)
-        gripper_action_pred = gripper_action_pred[:, 0] # (1, 1)
+        print('gripper_action_pred',gripper_action_pred)
+        open = gripper_action_pred[0, 0] < gripper_action_pred[0, -1]
+        gripper_action_pred = gripper_action_pred[:, -1] # (1, 1)
 
         if original_gripper:
-            gripper_action_pred = torch.nn.Sigmoid()(gripper_action_pred)
+            if Linear_Normalization:
+                min_x, max_x = -15, 15
+                min_y, max_y = -0.005, 0.035
+                gripper_action_pred = torch.clamp(gripper_action_pred, min=min_x, max=max_x)
+                gripper_action_pred = (gripper_action_pred - min_x) / (max_x - min_x) * (max_y - min_y) + min_y
+                # if open:
+                #     gripper_action_pred = gripper_action_pred + 0.002
+                # else:
+                #     gripper_action_pred = gripper_action_pred - 0.002
+            else:
+                gripper_action_pred = torch.nn.Sigmoid()(gripper_action_pred)
         else:
             gripper_action_pred = torch.nn.Sigmoid()(gripper_action_pred)
             gripper_action_pred = gripper_action_pred > 0.5

@@ -53,7 +53,7 @@
         "warmup_epochs": 1,
         "optimizer":"adam",
         "num_workers": 13,
-        "save_epoch": 1,
+        "save_epoch": 10,
         "gripper_loss_ratio": 0.01,
         "fwd_loss_ratio": 0.1,
         "kl_loss_ratio": 1.0,
@@ -65,7 +65,7 @@
         "fwd_pred_next_n": 3,
         "finetune": true,
         "use_pretrain": true,
-        "pretrained_model_path": "PATH_TO_PRETRAINED_CHECKPOINT"
+        "pretrained_model_path": "resources/pretrained.pt"
     },
 
     "input": {

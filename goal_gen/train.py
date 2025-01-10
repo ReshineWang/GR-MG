@@ -70,7 +70,7 @@ def init_trainer_config(configs):
     trainer_config['callbacks'] = [
         init_setup_callback(configs),
         LearningRateMonitor(logging_interval='step'),
-        ModelCheckpoint(dirpath=ckpt_dir, save_top_k=-1,every_n_epochs=10)
+        ModelCheckpoint(dirpath=ckpt_dir, save_top_k=-1, every_n_epochs=configs["save_epoch"]) # if you have only limited space, just set save_top_k=1 to save the best model
     ]
     return trainer_config
 
@@ -98,7 +98,7 @@ def experiment(variant):
                 resolution=256,
                 resolution_before_crop=288,
                 center_crop=False,
-                forward_n_min_max=[20, 22],
+                forward_n_min_max=[60, 62],
                 use_full=True,
                 is_training=True,
                 color_aug=True)
@@ -108,7 +108,7 @@ def experiment(variant):
                 resolution=256,
                 resolution_before_crop=288,
                 center_crop=False,
-                forward_n_min_max=[20, 22],
+                forward_n_min_max=[60, 62],
                 use_full = True,
                 is_training=False,
                 color_aug=False)

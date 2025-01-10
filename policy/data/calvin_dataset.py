@@ -84,7 +84,7 @@ class CalvinDataset_Policy(Dataset):
                  act_len=5, 
                  forward_n_max=25, 
                  mode='train',
-                 subfolder='task_ABC_D',
+                 subfolder='',
                  use_data_augmentation=True,
                  task_num=10000,
                  use_play=True,
@@ -125,7 +125,7 @@ class CalvinDataset_Policy(Dataset):
         self.clip_mean = (0.485, 0.456, 0.406) 
         self.clip_std = (0.229, 0.224, 0.225)
 
-        if self.use_data_augmentation:
+        if self.use_data_augmentation: # 随机平移数据增强
             self.static_rgb_preprocess_train = T.Compose([
                 RandomShiftsSingleAug(pad=10), # 10 for static rgb
                 T.Resize(self.input_size, interpolation=Image.BICUBIC),
@@ -183,9 +183,9 @@ class CalvinDataset_Policy(Dataset):
 
         if self.use_labeled: 
             for traj_idx in range(n_trajs):
-                traj_st, traj_ed = self.anns['info']['indx'][traj_idx]
-                traj_task = self.anns['language']['task'][traj_idx]
-                text=self.anns["language"]["ann"][traj_idx]
+                traj_st, traj_ed = self.anns['info']['indx'][traj_idx] # 获取一条轨迹的起始和结束帧
+                traj_task = self.anns['language']['task'][traj_idx] # 获取一条轨迹的任务
+                text=self.anns["language"]["ann"][traj_idx] # 获取一条轨迹的文本描述
                 if (traj_ed - self.seq_len - self.act_len + 2) <= traj_st:
                     continue # exclude extremely short trajectory
 
@@ -195,13 +195,14 @@ class CalvinDataset_Policy(Dataset):
                 else:
                     task_dict[traj_task] = task_dict[traj_task] + 1
                 if task_dict[traj_task] > self.task_num: # when arriving the maximum number, stop sampling from the task
-                    continue
+                    continue # 确保每个任务的轨迹数量不超过 task_num
                 # the action in the last frame is discarded
-                for st in range(traj_st, traj_ed - self.seq_len + 1):
-                    ed = st + self.seq_len
-                    act_ed = st + self.seq_len + self.act_len - 1 
-                    self.seq_tuple.append([traj_idx, st, ed, act_ed, traj_st, traj_ed,text])
-
+                for st in range(traj_st, traj_ed - self.seq_len + 1): # 遍历每个起始帧 st
+                    ed = st + self.seq_len # 计算观察序列的终止帧 ed（一次性观察之前的10帧）
+                    act_ed = st + self.seq_len + self.act_len - 1 # 计算动作序列的终止帧 act_ed（之后的5帧）
+                    self.seq_tuple.append([traj_idx, st, ed, act_ed, traj_st, traj_ed,text]) # 将轨迹的索引、起始帧、终止帧、动作终止帧、轨迹起始帧、轨迹终止帧加入到序列元组中
+                    print(f"traj_idx: {traj_idx}, st: {st}, ed: {ed}, act_ed: {act_ed}, traj_st: {traj_st}, traj_ed: {traj_ed}, text: {text}")
+        
         if self.use_play:
             # if you want to train with play data, please first generate play.json, and replace the following path
             with open(os.path.join(self.dataset_dir, "play.json"), 'r') as file:
@@ -234,26 +235,26 @@ class CalvinDataset_Policy(Dataset):
         states = []
 
 
-        state_buffer = [np.zeros(self.state_dim) for _ in range(self.seq_len + self.act_len - 1)]
-        state_valid = [0 for _ in range(self.seq_len + self.act_len - 1)]
+        state_buffer = [np.zeros(self.state_dim) for _ in range(self.seq_len + self.act_len - 1)] # 14维*7
+        state_valid = [0 for _ in range(self.seq_len + self.act_len - 1)] # 14维
 
-        tlen = ed - st # sequence length
+        tlen = ed - st # sequence length (10)
         assert tlen == self.seq_len
 
-        for i in range(st, act_ed):
+        for i in range(st, act_ed): # 从起始帧到动作终止帧, 一共14帧
             if i <= traj_ed:
                 frame = self.load(os.path.join(self.dataset_dir, f"episode_{i:07d}.npz"))
                 if i <= traj_ed:
-                    state_buffer[i - st] = frame['robot_obs']
+                    state_buffer[i - st] = frame['robot_obs'] # 机器人状态信息，这里前7位为xyz+欧拉角,最后一位是gripper
                     state_valid[i - st] = 1
             
-            if i < ed:
+            if i < ed: # 从起始帧到观测终止帧, 一共10帧
                 states += [frame['robot_obs']]
                 
                 static_rgb = frame['rgb_static']
-                static_rgb = Image.fromarray(static_rgb)
-                static_rgb = T.ToTensor()(static_rgb.convert("RGB"))
-                static_rgbs.append(static_rgb)
+                static_rgb = Image.fromarray(static_rgb) #(200, 200, 3)
+                static_rgb = T.ToTensor()(static_rgb.convert("RGB")) # torch.Size([3, 200, 200])
+                static_rgbs.append(static_rgb) # picture at time i
 
                 hand_rgb = frame['rgb_gripper']
                 hand_rgb = Image.fromarray(hand_rgb)
@@ -263,15 +264,15 @@ class CalvinDataset_Policy(Dataset):
         # we use relative action represented in current end effector coordinate
         action_buffer = []
         action_valid = []
-        if act_ed <= traj_ed:
+        if act_ed <= traj_ed: # 把最后一帧的动作加入到动作序列中
             act_ed_frame = self.load(os.path.join(self.dataset_dir, f"episode_{act_ed:07d}.npz"))
             state_buffer += [act_ed_frame['robot_obs']]
             state_valid += [1]
         else:
             state_buffer += [np.zeros(self.action_dim)] # mask non-existent action
             state_valid += [0]
-        assert len(state_buffer) == (self.seq_len + self.act_len)
-        assert len(state_valid) == (self.seq_len + self.act_len)
+        assert len(state_buffer) == (self.seq_len + self.act_len) # 15
+        assert len(state_valid) == (self.seq_len + self.act_len) # 15
         for k in range(0, self.seq_len + self.act_len - 1):
             
             if (state_valid[k] and state_valid[k+1]):
@@ -286,7 +287,7 @@ class CalvinDataset_Policy(Dataset):
                 delta_rotm = rotm0.T @ rotm1
                 delta_rpy = rotm2euler(delta_rotm)
                 temp_action = np.zeros(7)
-                temp_action[:3] = delta_xyz * ACTION_POS_SCALE
+                temp_action[:3] = delta_xyz * ACTION_POS_SCALE # action 实际上是相对位移，前后帧的差值
                 temp_action[3:6] = delta_rpy * ACTION_ROT_SCALE
                 temp_action[-1] = (gripper1 + 1.0) / 2.0  # (-1, 1) -> (0, 1)
                 action_buffer += [temp_action]
@@ -295,10 +296,10 @@ class CalvinDataset_Policy(Dataset):
                 action_buffer += [np.zeros(self.action_dim)]
                 action_valid += [0]
         
-        assert len(action_buffer) == (self.seq_len + self.act_len - 1)
-        assert len(action_valid) == (self.seq_len + self.act_len - 1)
+        assert len(action_buffer) == (self.seq_len + self.act_len - 1) # 14
+        assert len(action_valid) == (self.seq_len + self.act_len - 1) # 14
 
-        # Prepare goal Image
+        # Prepare goal Image 随机一个输入的RGB goal image
         goal_min_idx = ed
         goal_max_idx = min(traj_ed + 1, ed + self.forward_n_max)
         goal_ids = list(range(goal_min_idx, goal_max_idx))
@@ -333,7 +334,7 @@ class CalvinDataset_Policy(Dataset):
     
         # State
         states = np.array(states)
-        arm_states = states[:, :6]
+        arm_states = states[:, :6] # (10, 6)
         gripper_states = (states[:, -1:] + 1.0) / 2.0 # (-1, 1) -> (0, 1)
         states = np.hstack([arm_states, gripper_states])
         states = torch.from_numpy(states)
@@ -361,7 +362,7 @@ class CalvinDataset_Policy(Dataset):
         rel_state_data= torch.zeros(self.seq_len, self.state_dim).float() # (len, state_dim)
         rel_state_data[:tlen] = torch.from_numpy(rel_states)
 
-        # Action and action mask
+        # Action and action mask ，15帧的动作序列的掩码，5帧为一组
         actions = []
         action_masks = []
         for i in range(0, ed - st):
@@ -376,7 +377,7 @@ class CalvinDataset_Policy(Dataset):
         action_mask_data = torch.zeros(self.seq_len, self.act_len).long() # (len, act_len, action_dim)
         action_mask_data[:tlen] = action_masks
 
-        # Attention mask (should be all 1 for full dataset)
+        # Attention mask (should be all 1 for full dataset) 注意力掩码，全1
         attention_mask = np.ones(self.seq_len, dtype=np.int32) # (len)
         attention_mask[tlen:] = 0.0
         assert np.sum(attention_mask) == self.seq_len
@@ -391,16 +392,16 @@ class CalvinDataset_Policy(Dataset):
 
         
         data = dict()
-        data['goal_rgb'] = goal_rgb_data # (C, H, W)
-        data['rgb'] = rgb_data # (len, C, H, W)
-        data['hand_rgb'] = hand_rgb_data # (len, C, H, W)
-        data['state'] = state_data # (len, state_dim)
-        data['rel_state'] = rel_state_data # (len, state_dim)
-        data['action'] = action_data # (len, act_len, action_dim)
-        data['attention_mask'] = attention_mask_data # (len,)
-        data['action_mask'] = action_mask_data # (len, act_len, action_dim)
-        data['text'] = [text]
-        data["progress"]=progress_data #(len)
+        data['goal_rgb'] = goal_rgb_data # (C, H, W) (3, 224, 224)
+        data['rgb'] = rgb_data # (len, C, H, W) (10, 3, 224, 224)
+        data['hand_rgb'] = hand_rgb_data # (len, C, H, W) (10, 3, 224, 224)
+        data['state'] = state_data # (len, state_dim) (10, 7)
+        data['rel_state'] = rel_state_data # (len, state_dim) (10, 7)
+        data['action'] = action_data # (len, act_len, action_dim) (10, 5, 7)
+        data['attention_mask'] = attention_mask_data # (len,) (10)
+        data['action_mask'] = action_mask_data # (len, act_len, action_dim) (10, 5)
+        data['text'] = [text] # (1)
+        data["progress"]=progress_data #(len) (10)
         return data
   
 

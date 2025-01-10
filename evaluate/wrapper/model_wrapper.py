@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from omegaconf import OmegaConf
 import numpy as np
 import torch
@@ -20,13 +24,13 @@ import torch.nn.functional as F
 import policy.model.vision_transformer as vits
 from utils.utils import euler2rotm, rotm2euler
 from copy import deepcopy
-from calvin_agent.models.calvin_base_model import CalvinBaseModel
+#from calvin_agent.models.calvin_base_model import CalvinBaseModel
 from policy.model.model import GR_MG
 import time
 import clip
 GRIPPER_OPEN = 1
 GRIPPER_CLOSE = 0
-class CustomModel(CalvinBaseModel):
+class CustomModel():
     def __init__(self,
                  ckpt_path,
                  configs,
@@ -95,7 +99,7 @@ class CustomModel(CalvinBaseModel):
                 resid_pdrop=policy_config['dropout'],
                 attn_pdrop=policy_config['dropout'],
                 device=self.device)
-        
+
 
         # Set up the model
         payload = torch.load(ckpt_path)
@@ -180,7 +184,7 @@ class CustomModel(CalvinBaseModel):
             assert len(self.hand_rgb_list) == self.seq_len
             assert len(self.state_list) == self.seq_len
             buffer_len = len(self.rgb_list)
-        
+
 
 
         # Static RGB
@@ -241,7 +245,7 @@ class CustomModel(CalvinBaseModel):
             action=action.numpy()
 
 
-        
+
         # Action mode: ee_rel_pose_local
         state = obs['robot_obs'] # (15,)
         xyz_state = state[:3]
@@ -261,5 +265,136 @@ class CustomModel(CalvinBaseModel):
         action[-1] = gripper_action
         action = torch.from_numpy(action)
         self.rollout_step_counter += 1
-    
+
         return action,progress
+
+    def step_robotwin(self, obs, goal, text):
+        """Step function."""
+        goal_rgb = goal[0]
+
+        rgb = obs['observation']['head_camera']['rgb'] 
+        hand_rgb = obs['observation']['right_camera']['rgb']
+
+        goal_rgb = Image.fromarray(goal_rgb)
+        goal_rgb = T.ToTensor()(goal_rgb.convert("RGB"))
+        goal_rgb = self.preprocess(goal_rgb) # (3, 224, 224)
+
+        rgb = Image.fromarray(rgb)
+        rgb = T.ToTensor()(rgb.convert("RGB"))
+        rgb = self.preprocess(rgb) # (3, 224, 224)
+        self.rgb_list.append(rgb)
+
+        hand_rgb = Image.fromarray(hand_rgb)
+        hand_rgb = T.ToTensor()(hand_rgb.convert("RGB"))
+        hand_rgb = self.preprocess(hand_rgb)
+        self.hand_rgb_list.append(hand_rgb)
+
+        state = obs['joint_action'] # (14,)
+
+        state = state[7:14]# 取右手臂的状态
+        # 对gripper进行二值化处理
+        if state[-1] > 0.023:
+            state[-1] = 1
+        else:
+            state[-1] = 0
+        self.state_list.append(state)
+
+        buffer_len = len(self.rgb_list)  # 用于记录当前的序列长度
+        if buffer_len > self.seq_len:  # 如果序列长度大于10,则删除最早的数据
+            self.rgb_list.pop(0)
+            self.hand_rgb_list.pop(0)
+            self.state_list.pop(0)
+            assert len(self.rgb_list) == self.seq_len
+            assert len(self.hand_rgb_list) == self.seq_len
+            assert len(self.state_list) == self.seq_len
+            buffer_len = len(self.rgb_list)
+
+
+
+        # Static RGB
+        c, h, w = rgb.shape
+        c2,h2,w2=goal_rgb.shape
+        assert c==c2 and h==h2 and w==w2
+        rgb_data = torch.zeros((1, self.seq_len, c, h, w))  # 如果序列长度不到10，用0填充
+        rgb_tensor = torch.stack(self.rgb_list, dim=0) # (len, c, h, w)
+        rgb_data[0, :buffer_len] = rgb_tensor
+        goal_rgb_data=torch.zeros((1, c, h, w))
+        goal_rgb_data[0]=goal_rgb
+
+        # Hand RGB
+        c, h, w = hand_rgb.shape
+        hand_rgb_data = torch.zeros((1, self.seq_len, c, h, w))
+        hand_rgb_tensor = torch.stack(self.hand_rgb_list, dim=0) # (len, c, h, w)
+        hand_rgb_data[0, :buffer_len] = hand_rgb_tensor
+
+        # State
+        state_tensor = torch.tensor(self.state_list)
+        arm_state, gripper_state = state_tensor[:, 0:6], state_tensor[:,6]
+
+        arm_state_data = torch.zeros((1, self.seq_len, 6))
+        #arm_state_tensor = torch.from_numpy(arm_state)
+        arm_state_data[0, :buffer_len] = arm_state
+        #gripper_state_tensor = torch.from_numpy(gripper_state)
+        gripper_state_tensor = gripper_state.long()
+        gripper_state_data = torch.zeros((1, self.seq_len)).long()
+        gripper_state_data[0, :buffer_len] = gripper_state_tensor
+        gripper_state_data = F.one_hot(gripper_state_data, num_classes=2).type_as(arm_state_data) # 这里不用管，因为training的时候也加了
+
+        # Attention mask
+        attention_mask = torch.zeros(1, self.seq_len).long()
+        attention_mask[0, :buffer_len] = 1
+
+        # Action placeholder
+        arm_action_data = torch.zeros((1, self.seq_len, self.configs["policy"]['act_len'], 6))
+        gripper_action_data = torch.zeros(1, self.seq_len, self.configs["policy"]['act_len'])
+
+        #progress_placeholder
+        progress_data=torch.zeros(1, self.seq_len)
+
+        input_dict = dict()
+        input_dict['rgb'] = rgb_data.to(self.device)
+        input_dict['hand_rgb'] = hand_rgb_data.to(self.device)
+        input_dict["goal_rgb"]=goal_rgb_data.to(self.device)
+        input_dict['arm_state'] = arm_state_data.to(self.device)
+        input_dict['gripper_state'] = gripper_state_data.to(self.device)
+        input_dict['arm_action'] = arm_action_data.to(self.device)
+        input_dict['gripper_action'] = gripper_action_data.to(self.device)
+        input_dict['attention_mask'] = attention_mask.to(self.device)
+        input_dict["text"]=[text]
+        input_dict["progress"]=progress_data
+        # Forward pass
+        with torch.no_grad():
+            # action,action_traj = self.policy.evaluate(input_dict)
+            action, progress = self.policy.evaluate(input_dict, original_gripper=True, return_progress=True)
+
+            print('action:',action), print('progress:',progress)
+
+            # 反二值化到二指夹
+            #if action[-1]>0.5:
+            #else:
+             #   action[-1] = 0
+            progress=int(int(progress * 10) *10)
+            #action=action.numpy()
+
+
+        # # Action mode: ee_rel_pose_local
+        # state = obs['robot_obs'] # (15,)
+        # xyz_state = state[:3]
+        # rpy_state = state[3:6]
+        # rotm_state = euler2rotm(rpy_state)
+        # rel_action = action
+        # xyz_action = rel_action[:3] / 50 # scale down by 50  
+        # rpy_action = rel_action[3:6] / 20 # scale down by 20
+        # gripper_action = rel_action[6]
+        # rotm_action = euler2rotm(rpy_action)
+        # xyz_next_state = xyz_state + rotm_state @ xyz_action
+        # rotm_next_state = rotm_state @ rotm_action
+        # rpy_next_state = rotm2euler(rotm_next_state)
+        # action = np.zeros(7)
+        # action[:3] = (xyz_next_state - xyz_state) * 50  
+        # action[3:6] = (rpy_next_state - rpy_state) * 20
+        # action[-1] = gripper_action
+        # action = torch.from_numpy(action)
+        # self.rollout_step_counter += 1
+
+        return action, progress

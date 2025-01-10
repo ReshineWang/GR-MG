@@ -26,7 +26,6 @@
 
     "trainer": {
         "accelerator": "gpu",
-        "strategy": "ddp",
         "precision": "bf16",
         "logger": ["tensorboard"],
         "use_distributed_sampler": true,

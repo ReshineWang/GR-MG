@@ -40,9 +40,9 @@ class CalvinDataset_Goalgen(Dataset):
         self.color_aug=color_aug # whether to use ColorJitter
         self.center_crop=center_crop # whether to use CenterCrop
         if is_training:
-            self.data_dir = os.path.join(data_dir, "training") 
+            self.data_dir = os.path.join(data_dir) 
         else:
-            self.data_dir = os.path.join(data_dir, "validation")
+            self.data_dir = os.path.join(data_dir)
 
         self.forward_n_min, self.forward_n_max = forward_n_min_max
         self.use_full = use_full #whether to use every frame in a trajectory

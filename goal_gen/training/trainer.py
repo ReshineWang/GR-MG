@@ -46,7 +46,7 @@ class Goalgen_Trainer(pl.LightningModule):
             gradient_checkpointing=self.configs['gradient_checkpointing']
         ) 
 
-        self.use_ema=self.configs["use_ema"]
+        self.use_ema=self.configs["use_ema"] #EMA 是一种技术，用于在训练过程中平滑模型参数的更新，以获得更稳定和更好的模型
         if self.use_ema:
             self.ema_model = IP2P(
             pretrained_model_dir=self.configs['pretrained_model_dir'],

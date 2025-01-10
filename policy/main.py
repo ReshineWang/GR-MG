@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
-from pathlib import Path
 import random
 import numpy as np
 import torch
@@ -29,6 +31,7 @@ from lightning.pytorch.strategies import DDPStrategy
 from lightning import seed_everything
 from data.calvin_dataset import CalvinDataset_Policy
 from data.ego4d_dataset import Ego4DDataset_Policy
+from data.calvin_robotwin import CalvinRobotwin_Policy
 from training.trainer import Policy_Trainer
 from torch.utils.data import DataLoader
 def set_seed(seed=0):
@@ -100,20 +103,20 @@ def experiment(variant):
     model = Policy_Trainer(variant)
     # dataset
     if variant["trainer"]["finetune"]:
-        train_data= CalvinDataset_Policy(
-                data_dir="PATH_TO_CALVIN/calvin_data",
-                use_data_augmentation=True,
-                subfolder= "task_ABC_D",
+        train_data= CalvinRobotwin_Policy(
+                data_dir="/data/dex/RoboTwin/calvin_Robotwin",
+                use_data_augmentation=False,
+                #subfolder= "task_ABC_D",
                 mode= "train",
-                forward_n_max=25,
+                forward_n_min_max=[60, 62],
                 use_play=False,
                 use_labeled=True)
-        val_data= CalvinDataset_Policy(
-                data_dir="PATH_TO_CALVIN/calvin_data",
+        val_data= CalvinRobotwin_Policy(
+                data_dir="/data/dex/RoboTwin/calvin_Robotwin/validation",
                 use_data_augmentation=False,
-                subfolder= "task_ABC_D",
+                #subfolder= "task_ABC_D",
                 mode= "validate",
-                forward_n_max=25,
+                forward_n_min_max=[60, 62],
                 use_play=False,
                 use_labeled=True)
     else:
