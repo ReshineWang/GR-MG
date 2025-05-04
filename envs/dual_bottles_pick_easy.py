@@ -12,7 +12,7 @@ class dual_bottles_pick_easy(Base_task):
         self.load_camera()
         self.pre_move()
         self.load_actors()
-        self.step_lim = 400
+        self.step_lim = 700
     
     def pre_move(self):
         render_freq = self.render_freq

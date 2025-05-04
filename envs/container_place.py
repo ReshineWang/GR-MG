@@ -16,7 +16,7 @@ class container_place(Base_task):
         else:
             self.id_list = [8,9]
         self.load_actors()
-        self.step_lim = 350
+        self.step_lim = 600
     
     def pre_move(self):
         render_freq = self.render_freq

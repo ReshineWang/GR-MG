@@ -273,7 +273,7 @@ class CustomModel():
         goal_rgb = goal[0]
 
         rgb = obs['observation']['head_camera']['rgb'] 
-        hand_rgb = obs['observation']['right_camera']['rgb']
+        hand_rgb = obs['observation']['front_camera']['rgb']
 
         goal_rgb = Image.fromarray(goal_rgb)
         goal_rgb = T.ToTensor()(goal_rgb.convert("RGB"))
@@ -291,12 +291,16 @@ class CustomModel():
 
         state = obs['joint_action'] # (14,)
 
-        state = state[7:14]# 取右手臂的状态
-        # 对gripper进行二值化处理
-        if state[-1] > 0.023:
-            state[-1] = 1
-        else:
-            state[-1] = 0
+        state = state[:14]
+        # # 对gripper进行二值化处理
+        # if state[6] > 0.023:
+        #     state[6] = 1
+        # else:
+        #     state[6] = 0
+        # if state[13] > 0.023:
+        #     state[13] = 1
+        # else:
+        #     state[13] = 0
         self.state_list.append(state)
 
         buffer_len = len(self.rgb_list)  # 用于记录当前的序列长度
@@ -329,24 +333,30 @@ class CustomModel():
 
         # State
         state_tensor = torch.tensor(self.state_list)
-        arm_state, gripper_state = state_tensor[:, 0:6], state_tensor[:,6]
+        # left_arm_state, left_gripper_state = state_tensor[:, 0:6], state_tensor[:,6]
+        # right_arm_state, right_gripper_state = state_tensor[:, 7:13], state_tensor[:, 13]
+        # arm_state = torch.cat((left_arm_state, right_arm_state), dim=-1)
+        arm_state_data = torch.zeros((1, self.seq_len, 14))
+        arm_state_data[0, :buffer_len] = state_tensor # (1, l, 14)
 
-        arm_state_data = torch.zeros((1, self.seq_len, 6))
-        #arm_state_tensor = torch.from_numpy(arm_state)
-        arm_state_data[0, :buffer_len] = arm_state
-        #gripper_state_tensor = torch.from_numpy(gripper_state)
-        gripper_state_tensor = gripper_state.long()
-        gripper_state_data = torch.zeros((1, self.seq_len)).long()
-        gripper_state_data[0, :buffer_len] = gripper_state_tensor
-        gripper_state_data = F.one_hot(gripper_state_data, num_classes=2).type_as(arm_state_data) # 这里不用管，因为training的时候也加了
+        # gripper_state_tensor_left = left_gripper_state.long()
+        # gripper_state_data_left = torch.zeros((1, self.seq_len)).long()
+        # gripper_state_data_left[0, :buffer_len] = gripper_state_tensor_left
+        # gripper_state_data_left = F.one_hot(gripper_state_data_left, num_classes=2).type_as(arm_state_data) # (1, l, 2)
+
+        # gripper_state_tensor_right = right_gripper_state.long()
+        # gripper_state_data_right = torch.zeros((1, self.seq_len)).long()
+        # gripper_state_data_right[0, :buffer_len] = gripper_state_tensor_right
+        # gripper_state_data_right = F.one_hot(gripper_state_data_right, num_classes=2).type_as(arm_state_data) # (1, l, 2)
+        # gripper_state_data = torch.cat((gripper_state_data_left, gripper_state_data_right), dim=-1) # (1, l, 4)
 
         # Attention mask
         attention_mask = torch.zeros(1, self.seq_len).long()
         attention_mask[0, :buffer_len] = 1
 
         # Action placeholder
-        arm_action_data = torch.zeros((1, self.seq_len, self.configs["policy"]['act_len'], 6))
-        gripper_action_data = torch.zeros(1, self.seq_len, self.configs["policy"]['act_len'])
+        arm_action_data = torch.zeros((1, self.seq_len, self.configs["policy"]['act_len'], 14))
+        #gripper_action_data = torch.zeros(1, self.seq_len, self.configs["policy"]['act_len'], 2)
 
         #progress_placeholder
         progress_data=torch.zeros(1, self.seq_len)
@@ -354,11 +364,11 @@ class CustomModel():
         input_dict = dict()
         input_dict['rgb'] = rgb_data.to(self.device)
         input_dict['hand_rgb'] = hand_rgb_data.to(self.device)
-        input_dict["goal_rgb"]=goal_rgb_data.to(self.device)
+        input_dict["goal_rgb"] = goal_rgb_data.to(self.device)
         input_dict['arm_state'] = arm_state_data.to(self.device)
-        input_dict['gripper_state'] = gripper_state_data.to(self.device)
+        #input_dict['gripper_state'] = gripper_state_data.to(self.device)
         input_dict['arm_action'] = arm_action_data.to(self.device)
-        input_dict['gripper_action'] = gripper_action_data.to(self.device)
+        #input_dict['gripper_action'] = gripper_action_data.to(self.device)
         input_dict['attention_mask'] = attention_mask.to(self.device)
         input_dict["text"]=[text]
         input_dict["progress"]=progress_data
@@ -366,6 +376,8 @@ class CustomModel():
         with torch.no_grad():
             # action,action_traj = self.policy.evaluate(input_dict)
             action, progress = self.policy.evaluate(input_dict, original_gripper=True, return_progress=True)
+            #action[6] = action[6] - 0.005
+            #action[13] = action[13] - 0.005
 
             print('action:',action), print('progress:',progress)
 
@@ -375,26 +387,5 @@ class CustomModel():
              #   action[-1] = 0
             progress=int(int(progress * 10) *10)
             #action=action.numpy()
-
-
-        # # Action mode: ee_rel_pose_local
-        # state = obs['robot_obs'] # (15,)
-        # xyz_state = state[:3]
-        # rpy_state = state[3:6]
-        # rotm_state = euler2rotm(rpy_state)
-        # rel_action = action
-        # xyz_action = rel_action[:3] / 50 # scale down by 50  
-        # rpy_action = rel_action[3:6] / 20 # scale down by 20
-        # gripper_action = rel_action[6]
-        # rotm_action = euler2rotm(rpy_action)
-        # xyz_next_state = xyz_state + rotm_state @ xyz_action
-        # rotm_next_state = rotm_state @ rotm_action
-        # rpy_next_state = rotm2euler(rotm_next_state)
-        # action = np.zeros(7)
-        # action[:3] = (xyz_next_state - xyz_state) * 50  
-        # action[3:6] = (rpy_next_state - rpy_state) * 20
-        # action[-1] = gripper_action
-        # action = torch.from_numpy(action)
-        # self.rollout_step_counter += 1
 
         return action, progress

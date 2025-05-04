@@ -66,15 +66,8 @@ def class_decorator(task_name):
         raise SystemExit("No Task")
     return env_instance
 
-def make_env(dataset_path, observation_space, device_id):
-    val_folder = Path(dataset_path) / "validation"
-    # insert your own env wrapper
-    from wrapper.calvin_env_wrapper_raw import CalvinEnvWrapperRaw
-    device = torch.device('cuda', device_id)
-    env = CalvinEnvWrapperRaw(val_folder, observation_space, device)
-    return env
 
-def test_policy(model, Demo_class, env_args, ip2p_model, sr_path):
+def test_policy(model, Demo_class, env_args, ip2p_model, sr_path, task_name, ann):
     """Run this function to evaluate a model on the Robotwin challenge."""
     expert_check = False
     Demo_class.suc = 0
@@ -120,17 +113,18 @@ def test_policy(model, Demo_class, env_args, ip2p_model, sr_path):
         env_args['render_freq'] = render_freq
 
         Demo_class.setup_demo(now_ep_num=now_id, seed = now_seed, is_test = True, ** env_args)
-        Demo_class.apply_GR_MG(model, ip2p_model, env_args)
+        progress = Demo_class.apply_GR_MG(model, ip2p_model, task_name, env_args, ann)
 
         now_id += 1
         Demo_class.close()
         if Demo_class.render_freq:
             Demo_class.viewer.close()
-        
-        success_rate_message = f"block_hammer_beat success rate: {Demo_class.suc}/{Demo_class.test_num}, current seed: {now_seed}\n"
+
+        progress_message = f"Progress: {progress}%"
+        success_rate_message = f"{task_name} success rate: {Demo_class.suc}/{Demo_class.test_num}, current seed: {now_seed}"
         print(success_rate_message)
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_message = f"{current_time} - {success_rate_message}"
+        log_message = f"{current_time} - {success_rate_message} - {progress_message}\n"
 
         with open(sr_path, 'a') as f:
             f.write(log_message)
@@ -140,93 +134,6 @@ def test_policy(model, Demo_class, env_args, ip2p_model, sr_path):
 
     return now_seed, Demo_class.suc
     
-def evaluate_policy(model, env, eval_sr_path, eval_result_path, ip2p_model):
-    """Run this function to evaluate a model on the CALVIN challenge."""
-    conf_dir = Path("./calvin/calvin_models/conf")
-    task_cfg = OmegaConf.load(conf_dir / "callbacks/rollout/tasks/new_playtable_tasks.yaml")
-    task_oracle = hydra.utils.instantiate(task_cfg)
-    val_annotations = OmegaConf.load(conf_dir / "annotations/new_playtable_validation.yaml")
-    eval_sequences = get_sequences(NUM_SEQUENCES)
-    results = []
-    sequence_i = 0
-    for index,(initial_state, eval_sequence) in enumerate(eval_sequences):
-        result= evaluate_sequence(env, model, task_oracle, initial_state, eval_sequence, val_annotations, sequence_i,ip2p_model)
-        results.append(result)
-        success_list = count_success(results)
-        with open(eval_sr_path, 'a') as f:
-            line =f"{sequence_i}/{NUM_SEQUENCES}: "
-            for sr in success_list:
-                line += f"{sr:.3f} | "
-            sequence_i += 1
-            line += "\n"
-            f.write(line)
-
-        if index%100==0 and index!=0: #save every 100 sequences
-            print_and_save(results, eval_sequences[:index+1], eval_result_path[:-5]+f"_{index+1}"+".json", None)
-    print_and_save(results, eval_sequences, eval_result_path, None)
-    return results
-
-
-def evaluate_sequence(Demo_class, model, task_checker, initial_state, eval_sequence, val_annotations, sequence_i,ip2p_model):
-    """Evaluates a sequence of language instructions."""
-    robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
-    Demo_class.reset(robot_obs=robot_obs, scene_obs=scene_obs)
-    success_counter = 0
-    for subtask_i, subtask in enumerate(eval_sequence):
-        success = rollout(env, model, task_checker, subtask, val_annotations, subtask_i, sequence_i,ip2p_model)
-        if success:
-            success_counter += 1
-        else:
-            return success_counter
-    return success_counter
-
-def rollout(env, model, task_oracle, subtask, val_annotations, subtask_i, sequence_i,ip2p_model):
-    """Run the actual rollout on one subtask."""
-    obs = env.get_obs()
-    # get lang annotation for subtask
-    lang_annotation = val_annotations[subtask][0]
-    model.reset()
-    start_info = env.get_info()
-    debug_image=[]
-    progress=0
-    for i in range(EP_LEN):
-        if i % 20 == 0:  # hardcode
-            static_rgb = obs['rgb_obs']['rgb_static'] # (200, 200, 3)
-            hand_rgb = obs['rgb_obs']['rgb_gripper']
-            image_patch=[static_rgb]
-            text_patch=[lang_annotation + f".And {progress}% of the instruction has been finished."]
-            print(text_patch)
-            goal_image=ip2p_model.inference(image_patch,text_patch)
-            temp_image=[static_rgb,goal_image[0],hand_rgb]
-            debug_image.append(temp_image)
-
-        action,progress = model.step(obs,deepcopy(goal_image),[lang_annotation]) 
-        obs, _, _, current_info = env.step(action)
-
-        # check if current step solves a task
-        current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
-        if len(current_task_info) > 0:
-            print("success!")
-            return True
-    print("fail!")
-    
-    global FAIL_COUNTER
-    FAIL_COUNTER+=1
-    if FAIL_COUNTER % 30 ==0:  # save every 30 failure cases
-        length=len(debug_image) 
-        fig, ax = plt.subplots(length, 2,figsize=(5.5, 46.58))
-        for ax_ in ax.flat:
-            # ax_.plot([1, 2, 3], [4, 5, 6])
-            ax_.axis('off')  # 隐藏每个子图的刻度和边框
-        for i in range(length):
-            ax[i][0].imshow(debug_image[i][0])
-            ax[i][1].imshow(debug_image[i][1])
-            # ax[i][2].imshow(debug_image[i][2])
-        plt.tight_layout()
-        plt.axis('off')
-        plt.savefig(os.path.join(SAVE_DIR, f"{sequence_i}-{subtask_i}-{subtask}.png"),dpi=100)
-        plt.close()
-    return False
 
 def get_camera_config(camera_type):
     camera_config_path = os.path.join('envs/_camera_config.yml')
@@ -242,8 +149,6 @@ def get_camera_config(camera_type):
 def main():
     seed_everything(0, workers=True)  # type:ignore
     parser = argparse.ArgumentParser(description="Evaluate a trained model on multistep sequences with language goals.")
-    parser.add_argument("--dataset_path", default='/home/wangrx/Projects/GR-MG/resources/calvin_debug_dataset',
-                        type=str, help="Path to the dataset root directory.")  # modify it before opensource
     # evaluation
     parser.add_argument('--config_path', type=str, default="", help='path to the policy config file')
     parser.add_argument('--ckpt_dir', type=str, default="",help="path to the policy ckpt file")
@@ -260,9 +165,11 @@ def main():
     # Load config file
     with open(config_path, 'r') as f:
         configs = json.load(f)
-    with open(f'envs/block_hammer_beat.yml', 'r', encoding='utf-8') as f:
+    task_name = configs["exp_name"]
+    ann = configs["ann"]
+    with open(f'envs/task_config/{task_name}.yml', 'r', encoding='utf-8') as f:
         args = yaml.load(f.read(), Loader=yaml.FullLoader) 
-    args['head_camera_type'] = "L515"
+    args['head_camera_type'] = "D435"
     head_camera_config = get_camera_config(args['head_camera_type'])
     args['head_camera_fovy'] = head_camera_config['fovy']
     args['head_camera_w'] = head_camera_config['w']
@@ -307,8 +214,7 @@ def main():
         device=device)
     #model = None
 
-    #env = make_env(args.dataset_path, observation_space, device_id) 
-    task = class_decorator('block_hammer_beat')
+    task = class_decorator(task_name)
 
     # Success rate and result files
     flag="opensourcesd"
@@ -327,7 +233,9 @@ def main():
         task,
         args,
         ip2p_model=ip2p_model,
-        sr_path=sr_path,)
+        sr_path=sr_path,
+        task_name=task_name,
+        ann=ann)
     
 if __name__ == "__main__":
     #from test_render import Sapien_TEST

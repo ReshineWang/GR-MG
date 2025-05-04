@@ -17,7 +17,7 @@ class dual_shoes_place(Base_task):
         else:
             self.id_list = [2*i for i in range(5)]
         self.load_actors()
-        self.step_lim = 600
+        self.step_lim = 1000
     
     def pre_move(self):
         render_freq = self.render_freq

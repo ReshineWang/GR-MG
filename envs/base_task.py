@@ -1691,7 +1691,7 @@ class Base_task(gym.Env):
         pass
 
     # ================= For Your Policy Deployment =================
-    def apply_GR_MG(self, model, ip2p_model, args):
+    def apply_GR_MG(self, model, ip2p_model, task_name, args, ann):
         step_cnt = 0
         self.test_num += 1
         success_flag = False
@@ -1702,8 +1702,8 @@ class Base_task(gym.Env):
         obs = self.get_obs()
         progress=0
         debug_image=[]
-        lang_annotation = "Beat the block with a hammer"
-        image_save_dir = os.path.join('SAVE_PATH/policy', "images")
+        lang_annotation = ann
+        image_save_dir = os.path.join(f'SAVE_PATH/policy/image/{task_name}')
         if not os.path.exists(image_save_dir):
             os.makedirs(image_save_dir)
 
@@ -1711,7 +1711,7 @@ class Base_task(gym.Env):
             obs = self.get_obs() # get observation
             if step_cnt  % 20 == 0:  # hardcode
                 static_rgb = obs['observation']['head_camera']['rgb'] 
-                hand_rgb = obs['observation']['right_camera']['rgb']
+                hand_rgb = obs['observation']['front_camera']['rgb']
                 image_patch=[static_rgb]
                 text_patch=[lang_annotation + f".And {progress}% of the instruction has been finished."]
                 print(text_patch)
@@ -1728,12 +1728,12 @@ class Base_task(gym.Env):
                 goal_image_image.save(os.path.join(image_save_dir, f"goal_image_{step_cnt}.png"))
 
             actions, progress = model.step_robotwin(obs,deepcopy(goal_image),[lang_annotation]) 
-            actions = actions.unsqueeze(0)
+            #actions = actions.unsqueeze(0)
             left_arm_actions , left_gripper , left_current_qpos, left_path = [], [], [], []
             right_arm_actions , right_gripper , right_current_qpos, right_path = [], [], [], []
 
-            left_arm_actions, left_gripper = np.zeros(6), np.zeros(1) # 0-5 left joint action, 6 left gripper action
-            right_arm_actions, right_gripper = actions[:, 0:6], actions[:, 6] # 7-12 right joint action, 13 right gripper action
+            left_arm_actions, left_gripper = actions[:, 0:6], actions[:, 6] # 0-5 left joint action, 6 left gripper action
+            right_arm_actions, right_gripper = actions[:, 7:13], actions[:, 13] # 7-12 right joint action, 13 right gripper action
             left_current_qpos, right_current_qpos = obs['joint_action'][:6], obs['joint_action'][7:13]  # current joint and gripper action
             
 
@@ -1840,3 +1840,4 @@ class Base_task(gym.Env):
                 break
             
         print("\nfail!")
+        return progress

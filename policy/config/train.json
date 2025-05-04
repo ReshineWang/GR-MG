@@ -1,8 +1,9 @@
 {
-    "seed": 123,
+    "seed": 2,
     "ckpt_root": "SAVE_PATH/policy/checkpoints/",
     "log_root": "LOG_PATH/policy/logs/",
-    "exp_name":"train_policy",
+    "exp_name":"blocks_stack_hard",
+    "ann": "pick the bottles",
     "resume":null,
     "policy": {
         "resampler_params": {
@@ -39,10 +40,10 @@
             "accumulate_grad_batches": 1,
             "use_distributed_sampler": true,
             "log_every_n_steps": 50,
-            "max_epochs": 50
+            "max_epochs": 100
         },
         "lr_decay":true,
-        "batch_size": 32,
+        "batch_size": 64,
         "without_norm_pix_loss": false,
         "start_epoch": 0,
         "learning_rate": 1e-3,
@@ -69,8 +70,8 @@
     },
 
     "input": {
-        "state_dim": 7,
-        "act_dim": 7,
+        "state_dim": 14,
+        "act_dim": 14,
         "use_hand_rgb": true,
         "use_state": true
     }

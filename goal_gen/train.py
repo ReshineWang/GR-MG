@@ -89,12 +89,12 @@ def experiment(variant):
 
     trainer = Trainer(**trainer_config)
     variant['gpus'] = trainer.num_devices
-
+    task_name = variant["exp_name"]
     model = Goalgen_Trainer(variant)
 
     # dataset
     train_data= CalvinDataset_Goalgen(
-                data_dir="/data/dex/RoboTwin/policy/Diffusion-Policy/data/block_hammer_beat_L515_100_png",
+                data_dir=f"/data/dex/RoboTwin/policy/Diffusion-Policy/data/{task_name}_D435_90_png",
                 resolution=256,
                 resolution_before_crop=288,
                 center_crop=False,
@@ -104,7 +104,7 @@ def experiment(variant):
                 color_aug=True)
     #import pdb; pdb.set_trace()
     val_data= CalvinDataset_Goalgen(
-                data_dir="/data/dex/RoboTwin/policy/Diffusion-Policy/data/block_hammer_beat_L515_100_png",
+                data_dir=f"/data/dex/RoboTwin/policy/Diffusion-Policy/data/{task_name}_D435_100_png/validation",
                 resolution=256,
                 resolution_before_crop=288,
                 center_crop=False,

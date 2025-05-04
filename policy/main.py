@@ -101,10 +101,12 @@ def experiment(variant):
     trainer_config = init_trainer_config(variant)
     trainer = Trainer(**trainer_config)   
     model = Policy_Trainer(variant)
+    task_name = variant["exp_name"]
     # dataset
     if variant["trainer"]["finetune"]:
         train_data= CalvinRobotwin_Policy(
-                data_dir="/data/dex/RoboTwin/calvin_Robotwin",
+                data_dir=f"/data/dex/RoboTwin/calvin_Robotwin/{task_name}",
+                config=variant,
                 use_data_augmentation=False,
                 #subfolder= "task_ABC_D",
                 mode= "train",
@@ -112,7 +114,8 @@ def experiment(variant):
                 use_play=False,
                 use_labeled=True)
         val_data= CalvinRobotwin_Policy(
-                data_dir="/data/dex/RoboTwin/calvin_Robotwin/validation",
+                data_dir=f"/data/dex/RoboTwin/calvin_Robotwin/{task_name}/validation",
+                config=variant,
                 use_data_augmentation=False,
                 #subfolder= "task_ABC_D",
                 mode= "validate",

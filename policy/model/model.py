@@ -123,8 +123,8 @@ class GR_MG(nn.Module):
         self.without_norm_pix_loss = without_norm_pix_loss
         if self.use_state:
             # state embedding
-            self.embed_arm_state = torch.nn.Linear(self.state_dim-1, self.hidden_size)
-            self.embed_gripper_state = torch.nn.Linear(2, self.hidden_size) # one-hot gripper state
+            self.embed_arm_state = torch.nn.Linear(self.state_dim, 2*self.hidden_size)  # 双臂去掉两个gripper状态
+            #self.embed_gripper_state = torch.nn.Linear(4, self.hidden_size)  # one-hot gripper state
             self.embed_state = torch.nn.Linear(2*self.hidden_size, self.hidden_size)
 
 
@@ -152,8 +152,9 @@ class GR_MG(nn.Module):
             self.action_queries = nn.Embedding(1, self.hidden_size) # arm + gripper
 
             # action encoder (embed action trajectory as style vector)
-            self.embed_arm_action = torch.nn.Linear(self.act_dim - 1, self.act_encoder_dim)
-            self.embed_gripper_action = torch.nn.Embedding(2, self.act_encoder_dim)
+            self.embed_arm_action = torch.nn.Linear(self.act_dim , 2* self.act_encoder_dim)  # 双臂去掉两个gripper状态
+            #self.embed_gripper_action_left = torch.nn.Embedding(2, self.act_encoder_dim//2)  # left gripper
+            #self.embed_gripper_action_right = torch.nn.Embedding(2, self.act_encoder_dim//2)
             self.embed_action = nn.Linear(2 * self.act_encoder_dim, self.act_encoder_dim)
             self.action_encoder_cls_token = torch.nn.Embedding(1, self.act_encoder_dim)
             action_encoder_depth = 4
@@ -172,8 +173,8 @@ class GR_MG(nn.Module):
                 for i in range(action_decoder_depth)])
             self.action_mask_token_embedding = nn.Embedding(1, self.act_decoder_dim)
             self.action_decoder_positional_embeddings = nn.Embedding(self.act_len, self.act_decoder_dim)
-            self.pred_arm_act = nn.Linear(self.act_decoder_dim, self.act_dim - 1) # arm action
-            self.pred_gripper_act = nn.Linear(self.act_decoder_dim, 1) # gripper action (binary)
+            self.pred_arm_act = nn.Linear(self.act_decoder_dim, self.act_dim)  # 双臂去掉两个gripper状态
+            #self.pred_gripper_act = nn.Linear(self.act_decoder_dim, 2)  # 双臂gripper状态
             
         # predict future image
         if self.fwd_pred:
@@ -241,12 +242,12 @@ class GR_MG(nn.Module):
 
 
         if self.use_state:
-            arm_state = input_dict['arm_state']  # (b, l, state_dim - 1)
-            gripper_state = input_dict['gripper_state']  # (b, l, 2)
-            arm_state_embeddings = self.embed_arm_state(arm_state.view(batch_size, seq_length, self.state_dim-1))  # (b, l, h)
-            gripper_state_embeddings = self.embed_gripper_state(gripper_state)  # (b, l, h)
-            state_embeddings = torch.cat((arm_state_embeddings, gripper_state_embeddings), dim=2)  # (b, l, 2h)
-            state_embeddings = self.embed_state(state_embeddings)  # (b, l, h)
+            arm_state = input_dict['arm_state']  # (b, l, state_dim)
+            #gripper_state = input_dict['gripper_state']  # (b, l, 4)
+            arm_state_embeddings = self.embed_arm_state(arm_state.view(batch_size, seq_length, self.state_dim))  # (b, l, h)
+            #gripper_state_embeddings = self.embed_gripper_state(gripper_state)  # (b, l, h)
+            #state_embeddings = torch.cat((arm_state_embeddings, gripper_state_embeddings), dim=2)  # (b, l, 2h)
+            state_embeddings = self.embed_state(arm_state_embeddings)  # (b, l, h)
 
         # goal rgb mae feature
         goal_obs_embeddings, goal_patch_embeddings = self.model_mae(goal_rgb)  # (b, img_feat_dim), (b, 196, patch_feat_dim)
@@ -453,11 +454,18 @@ class GR_MG(nn.Module):
 
             # encode action
             arm_action = input_dict['arm_action'] # b,len,act_len,act_dim-1
-            gripper_action = input_dict['gripper_action'].long() # b,len,act_len
+            #gripper_action = input_dict['gripper_action'].long() # b,len,act_len
+                        # Separate left and right gripper actions
+            # left_gripper_action = gripper_action[:, :, :, 0]  # (b, l, act_len)
+            # right_gripper_action = gripper_action[:, :, :, 1]  # (b, l, act_len)
+            
+            # Embed gripper actions separately
+            # left_gripper_action_embeddings = self.embed_gripper_action_left(left_gripper_action)  # (b, l, act_len, act_encoder_dim)
+            # right_gripper_action_embeddings = self.embed_gripper_action_right(right_gripper_action)  # (b, l, act_len, act_encoder_dim)
+            
             arm_action_embeddings = self.embed_arm_action(arm_action) # b,len,act_len,act_encoder_dim
-            gripper_action_embeddings = self.embed_gripper_action(gripper_action) # b,len,act_len,act_encoder_dim
-            action_embeddings = torch.cat((arm_action_embeddings, gripper_action_embeddings), dim=-1) # b,len,act_len,2*act_encoder_dim
-            action_embeddings = self.embed_action(action_embeddings) # b,len,act_len,act_encoder_dim
+            #action_embeddings = torch.cat((arm_action_embeddings, left_gripper_action_embeddings, right_gripper_action_embeddings), dim=-1) # b,len,act_len,2*act_encoder_dim
+            action_embeddings = self.embed_action(arm_action_embeddings) # b,len,act_len,act_encoder_dim
             cls_token_embeddings = self.action_encoder_cls_token.weight # 1,act_encoder_dim
             cls_token_embeddings = cls_token_embeddings.unsqueeze(0).unsqueeze(0).repeat(batch_size, seq_length, 1, 1) # b,len,1,act_encoder_dim
             z = torch.cat((cls_token_embeddings, action_embeddings), dim=2) # b,len,1+act_len,act_encoder_dim
@@ -504,8 +512,8 @@ class GR_MG(nn.Module):
 
 
             action_decoder_output_embeddings = action_decoder_output_embeddings.reshape(batch_size, seq_length, self.act_len, self.act_decoder_dim)
-            arm_action_preds = self.pred_arm_act(action_decoder_output_embeddings)  # (b, l, act_len, act_dim - 1)
-            gripper_action_preds = self.pred_gripper_act(action_decoder_output_embeddings)  # (b, l, act_len, 1)
+            arm_action_preds = self.pred_arm_act(action_decoder_output_embeddings)  # (b, l, act_len, act_dim )
+            #gripper_action_preds = self.pred_gripper_act(action_decoder_output_embeddings)  # (b, l, act_len, 2)
                 
         # forward prediction: predict next obs
         if self.fwd_pred:
@@ -564,7 +572,7 @@ class GR_MG(nn.Module):
             'obs_hand_preds': obs_hand_preds,
             'obs_hand_target': obs_hand_target,
             'arm_action_preds': arm_action_preds,
-            'gripper_action_preds': gripper_action_preds,
+            #'gripper_action_preds': gripper_action_preds,
             'action_mu_preds': action_mu_preds,
             'action_logvar_preds': action_logvar_preds,
             'progress_preds':progress_preds,
@@ -578,43 +586,64 @@ class GR_MG(nn.Module):
         attention_mask = input_dict['attention_mask']
         prediction = self.forward(input_dict, is_training=False)
 
-        arm_action_preds = prediction['arm_action_preds'] # (1, len, act_len, act_dim-1)
-        gripper_action_preds = prediction['gripper_action_preds'] # (1, len, act_len, 1)
+        arm_action_preds = prediction['arm_action_preds'] # (1, len, act_len, act_dim)
+        # gripper_action_preds = prediction['gripper_action_preds'] # (1, len, act_len, 2)
         
 
-
-        arm_action_preds = arm_action_preds.squeeze(0) # (len, act_len, act_dim-1)
-        gripper_action_preds = gripper_action_preds.squeeze() # (len, act_len)
+        arm_action_preds = arm_action_preds.squeeze(0) # (len, act_len, act_dim)
+        # gripper_action_preds = gripper_action_preds.squeeze() # (len, act_len, 2)
         arm_action_preds = arm_action_preds[attention_mask.flatten() > 0]
-        gripper_action_preds = gripper_action_preds[attention_mask.flatten() > 0]
+        # gripper_action_preds = gripper_action_preds[attention_mask.flatten() > 0]
 
 
         # Take the last action
-        arm_action_pred = arm_action_preds[-1].cpu() # (act_len, act_dim-1)
-        arm_action_pred = arm_action_pred[0] # (act_dim-1, )
-        gripper_action_pred = gripper_action_preds[-1:].cpu() # (1, act_len)
-        print('gripper_action_pred',gripper_action_pred)
-        open = gripper_action_pred[0, 0] < gripper_action_pred[0, -1]
-        gripper_action_pred = gripper_action_pred[:, -1] # (1, 1)
+        arm_action_pred = arm_action_preds[-1].cpu() # (act_len, act_dim)
+        #arm_action_pred = arm_action_pred[0] # (act_dim, )
+        action_pred = arm_action_pred
+        
+        # left_arm_action_pred = arm_action_pred[:6]  # (6, )
+        # right_arm_action_pred = arm_action_pred[6:]  # (6, )
 
-        if original_gripper:
-            if Linear_Normalization:
-                min_x, max_x = -15, 15
-                min_y, max_y = -0.005, 0.035
-                gripper_action_pred = torch.clamp(gripper_action_pred, min=min_x, max=max_x)
-                gripper_action_pred = (gripper_action_pred - min_x) / (max_x - min_x) * (max_y - min_y) + min_y
-                # if open:
-                #     gripper_action_pred = gripper_action_pred + 0.002
-                # else:
-                #     gripper_action_pred = gripper_action_pred - 0.002
-            else:
-                gripper_action_pred = torch.nn.Sigmoid()(gripper_action_pred)
-        else:
-            gripper_action_pred = torch.nn.Sigmoid()(gripper_action_pred)
-            gripper_action_pred = gripper_action_pred > 0.5
-            gripper_action_pred = gripper_action_pred.int().float()
-            gripper_action_pred = gripper_action_pred * 2.0 - 1.0
-        action_pred = torch.cat((arm_action_pred, gripper_action_pred), dim=0) # (act_dim,)
+        # # 分别提取左右臂的gripper预测值
+        # left_gripper_action_pred = gripper_action_preds[-1,:, 0].cpu()  # (1, act_len)
+        # right_gripper_action_pred = gripper_action_preds[-1,:, 1].cpu()  # (1, act_len)
+
+        # print('left_gripper_action_pred',left_gripper_action_pred)
+        # left_gripper_action_pred = left_gripper_action_pred[ -1:] # (1, 1)
+        # right_gripper_action_pred = right_gripper_action_pred[ -1:]
+
+        # # 处理左臂gripper预测值
+        # if original_gripper:
+        #     if Linear_Normalization:
+        #         min_x, max_x = -15, 15
+        #         min_y, max_y = 0, 0.035
+        #         left_gripper_action_pred = torch.clamp(left_gripper_action_pred, min=min_x, max=max_x)
+        #         left_gripper_action_pred = (left_gripper_action_pred - min_x) / (max_x - min_x) * (max_y - min_y) + min_y
+        #     else:
+        #         left_gripper_action_pred = torch.nn.Sigmoid()(left_gripper_action_pred)
+        # else:
+        #     left_gripper_action_pred = torch.nn.Sigmoid()(left_gripper_action_pred)
+        #     left_gripper_action_pred = left_gripper_action_pred > 0.5
+        #     left_gripper_action_pred = left_gripper_action_pred.int().float()
+        #     left_gripper_action_pred = left_gripper_action_pred * 2.0 - 1.0
+
+        # # 处理右臂gripper预测值
+        # if original_gripper:
+        #     if Linear_Normalization:
+        #         min_x, max_x = -15, 15
+        #         min_y, max_y = 0, 0.035
+        #         right_gripper_action_pred = torch.clamp(right_gripper_action_pred, min=min_x, max=max_x)
+        #         right_gripper_action_pred = (right_gripper_action_pred - min_x) / (max_x - min_x) * (max_y - min_y) + min_y
+        #     else:
+        #         right_gripper_action_pred = torch.nn.Sigmoid()(right_gripper_action_pred)
+        # else:
+        #     right_gripper_action_pred = torch.nn.Sigmoid()(right_gripper_action_pred)
+        #     right_gripper_action_pred = right_gripper_action_pred > 0.5
+        #     right_gripper_action_pred = right_gripper_action_pred.int().float()
+        #     right_gripper_action_pred = right_gripper_action_pred * 2.0 - 1.0
+
+
+        # action_pred = torch.cat((left_arm_action_pred, left_gripper_action_pred, right_arm_action_pred, right_gripper_action_pred), dim=0) # (act_dim,)
         if return_progress:
             progress=prediction["progress_preds"]
             progress=progress[-1]

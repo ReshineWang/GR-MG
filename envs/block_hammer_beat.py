@@ -13,7 +13,7 @@ class block_hammer_beat(Base_task):
         self.load_camera()
         self.pre_move()
         self.load_actors()
-        self.step_lim = 400
+        self.step_lim = 700
 
     def pre_move(self):
         pass
@@ -25,7 +25,7 @@ class block_hammer_beat(Base_task):
             modelname="020_hammer_2",
         )
         block_pose = rand_pose(
-            xlim=[0,0.25],
+            xlim=[-0.25,0.25],
             ylim=[-0.05,0.15],
             zlim=[0.76],
             qpos=[0.5, 0.5, 0.5, 0.5],

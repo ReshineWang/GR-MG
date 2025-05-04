@@ -80,8 +80,7 @@ class RandomShiftsSingleAug(nn.Module):
 class CalvinRobotwin_Policy(Dataset):
     def __init__(self,
                  data_dir,
-                 seq_len=10,
-                 act_len=5, 
+                 config,
                  forward_n_min_max=[60, 62], 
                  mode='train',
                  subfolder='',
@@ -101,8 +100,8 @@ class CalvinRobotwin_Policy(Dataset):
         use_labeled: whether to use data annotated with language
         '''
         self.dataset_dir = os.path.join(data_dir, subfolder)
-        self.seq_len = seq_len 
-        self.act_len = act_len
+        self.seq_len = config["policy"]["seq_len"] 
+        self.act_len = config["policy"]["act_len"]
         self.forward_n_min, self.forward_n_max = forward_n_min_max
         self.mode = mode
         self.use_data_augmentation = use_data_augmentation
@@ -110,8 +109,8 @@ class CalvinRobotwin_Policy(Dataset):
         self.use_play=use_play
         self.use_labeled=use_labeled
 
-        self.action_dim = 7
-        self.state_dim = 7  # ( x,y,z,r,p,y,gripper) 
+        self.action_dim = config["input"]["act_dim"]
+        self.state_dim = config["input"]["state_dim"]  # ( x,y,z,r,p,y,gripper) 
 
         if mode == 'validate':
             tag = "validation"
@@ -201,7 +200,7 @@ class CalvinRobotwin_Policy(Dataset):
                     ed = st + self.seq_len # 计算观察序列的终止帧 ed（一次性观察之前的10帧）
                     act_ed = st + self.seq_len + self.act_len - 1 # 计算动作序列的终止帧 act_ed（之后的5帧）
                     self.seq_tuple.append([traj_idx, st, ed, act_ed, traj_st, traj_ed,text]) # 将轨迹的索引、起始帧、终止帧、动作终止帧、轨迹起始帧、轨迹终止帧加入到序列元组中
-                    print(f"traj_idx: {traj_idx}, st: {st}, ed: {ed}, act_ed: {act_ed}, traj_st: {traj_st}, traj_ed: {traj_ed}, text: {text}")
+                    #print(f"traj_idx: {traj_idx}, st: {st}, ed: {ed}, act_ed: {act_ed}, traj_st: {traj_st}, traj_ed: {traj_ed}, text: {text}")
         
         if self.use_play:
             # if you want to train with play data, please first generate play.json, and replace the following path
@@ -236,7 +235,7 @@ class CalvinRobotwin_Policy(Dataset):
         states = []
 
 
-        state_buffer = [np.zeros(self.state_dim) for _ in range(self.seq_len + self.act_len - 1)] # 14维*7
+        state_buffer = [np.zeros(self.state_dim) for _ in range(self.seq_len + self.act_len - 1)] # 14维*14
         state_valid = [0 for _ in range(self.seq_len + self.act_len - 1)] # 14维
 
         tlen = ed - st # sequence length (10)
@@ -246,7 +245,7 @@ class CalvinRobotwin_Policy(Dataset):
             if i <= traj_ed:
                 frame = self.load(os.path.join(self.dataset_dir, f"episode{traj_idx}", f"frame_{i:04d}.npz"))
                 if i <= traj_ed:
-                    state_buffer[i - st] = frame['robot_obs'] # 机器人joint action，这里取后7位右手数据
+                    state_buffer[i - st] = frame['robot_obs'] # 机器人joint action
                     state_valid[i - st] = 1
             
             if i < ed: # 从起始帧到观测终止帧, 一共10帧
@@ -277,12 +276,13 @@ class CalvinRobotwin_Policy(Dataset):
         for k in range(0, self.seq_len + self.act_len - 1):
             
             if (state_valid[k] and state_valid[k+1]):
-                temp_action = np.zeros(7)
-                temp_action[:6] = state_buffer[k+1][7:13]
+                temp_action = np.zeros(self.action_dim)
+                temp_action[:14] = state_buffer[k+1][0:14]
                 # 提取并二值化处理
-                gripper_state_value = state_buffer[k+1][-1]
-                binary_gripper_state = 1 if gripper_state_value > 0.023 else 0
-                temp_action[-1] = binary_gripper_state
+                # binary_gripper_state_left = 1 if state_buffer[k+1][6] > 0.023 else 0
+                # temp_action[6] = binary_gripper_state_left
+                # binary_gripper_state_right = 1 if state_buffer[k+1][13] > 0.023 else 0
+                # temp_action[13] = binary_gripper_state_right
 
                 action_buffer += [temp_action]
                 action_valid += [1]
@@ -328,13 +328,14 @@ class CalvinRobotwin_Policy(Dataset):
     
         # State
         states = np.array(states)
-        arm_states = states[:, 7:13] # (10, 6)
-        gripper_states = states[:, -1:] # (10, 1)
+        # left_gripper_state = states[:, 6]  # (10, ) 第6位是左臂的gripper状态
+        # right_gripper_state = states[:, 13]  # (10, ) 第13位是右臂的gripper状态
 
-        #这里把gripper_states二值化
-        gripper_states_binary = np.where(gripper_states > 0.023, 1, 0)
-
-        states = np.hstack([arm_states, gripper_states_binary])
+        # #这里把gripper_states二值化
+        # gripper_states_binary = np.where(left_gripper_state > 0.023, 1, 0)
+        # states[:, 6] = gripper_states_binary
+        # gripper_states_binary = np.where(right_gripper_state > 0.023, 1, 0)
+        # states[:, 13] = gripper_states_binary
         states = torch.from_numpy(states)
         state_data = torch.zeros(self.seq_len, self.state_dim).float() # (len, state_dim)
         state_data[:tlen] = states

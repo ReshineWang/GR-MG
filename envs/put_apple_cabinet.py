@@ -12,7 +12,7 @@ class put_apple_cabinet(Base_task):
         self.load_camera()
         self.pre_move()
         self.load_actors()
-        self.step_lim = 600
+        self.step_lim = 1000
 
     def pre_move(self):
         render_freq = self.render_freq

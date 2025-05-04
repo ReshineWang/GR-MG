@@ -233,16 +233,29 @@ class Policy_Trainer(pl.LightningModule):
             progress=batch["progress"]
 
             # Split arm and gripper action
-            arm_action = action[:, :, :, :6]  # (b, l, act_len, act_dim - 1)
-            gripper_action = action[:, :, :, 6]  # (b, l, act_len)
-            arm_action_target = torch.clone(arm_action)  # (b, l, act_len, act_dim - 1)
-            gripper_action_target = torch.clone(gripper_action)  # (b, l, act_len)
+            # left_arm_action = action[:, :, :, :6]
+            # right_arm_action = action[:, :, :, 7:13]
+            # arm_action = torch.cat([left_arm_action, right_arm_action], dim=-1) # (b, l, act_len, act_dim - 2)
+            arm_action = action[:, :, :, :14] # (b, l, act_len, act_dim)
+
+            # left_gripper_action = action[:, :, :, 6:7]  # (b, l, act_len, 1)
+            # right_gripper_action = action[:, :, :, 13:14]  # (b, l, act_len, 1)
+            # gripper_action = torch.cat([left_gripper_action, right_gripper_action], dim=-1) # (b, l, act_len, 2)
+
+            arm_action_target = torch.clone(arm_action)  # (b, l, act_len, act_dim)
+            # gripper_action_target = torch.clone(gripper_action)  # (b, l, act_len, 2)
 
             # Split arm and gripper state
-            arm_state = state[:, :, :6]  # (b, l, state_dim - 1)
-            gripper_state = state[:, :, 6].long()  # (b, l)
-            gripper_state = F.one_hot(gripper_state, num_classes=2).type_as(arm_state)  # (b, l, 2)
-
+            # left_arm_state = state[:, :, :6]
+            # right_arm_state = state[:, :, 7:13]
+            # arm_state = torch.cat([left_arm_state, right_arm_state], dim=-1) # (b, l, state_dim - 2)
+            arm_state = state
+            # gripper_state_left = state[:, :, 6].long()
+            # gripper_state_right = state[:, :, 13].long()
+            # gripper_state_left = F.one_hot(gripper_state_left, num_classes=2).type_as(arm_state)  # (b, l, 2)
+            # gripper_state_right = F.one_hot(gripper_state_right, num_classes=2).type_as(arm_state)  # (b, l, 2)
+            # gripper_state = torch.cat((gripper_state_left, gripper_state_right), dim=-1)  # (b, l, 4)
+            
             seq_len = arm_action.size(1)
             act_len = arm_action.size(2)
 
@@ -251,9 +264,9 @@ class Policy_Trainer(pl.LightningModule):
                 'rgb': rgb,
                 'hand_rgb': hand_rgb,
                 'arm_action': arm_action,
-                'gripper_action': gripper_action,
+                #'gripper_action': gripper_action,
                 'arm_state': arm_state,
-                'gripper_state': gripper_state,
+                #'gripper_state': gripper_state,
                 'attention_mask': attention_mask, #（b,l)
                 'text':text,
                 'progress':progress
@@ -265,8 +278,8 @@ class Policy_Trainer(pl.LightningModule):
 
             obs_preds = prediction['obs_preds']
             obs_target = prediction['obs_target']
-            arm_action_preds = prediction['arm_action_preds']  # (b, l, act_len, act_dim - 1)
-            gripper_action_preds = prediction['gripper_action_preds']  # (b, l, act_len, 1)
+            arm_action_preds = prediction['arm_action_preds']  # (b, l, act_len, act_dim)
+            #gripper_action_preds = prediction['gripper_action_preds']  # (b, l, act_len, 2)
             obs_hand_preds = prediction['obs_hand_preds']
             obs_hand_target = prediction['obs_hand_target']
             action_mu_preds = prediction['action_mu_preds']  # (b * l, act_latent_dim)
@@ -283,8 +296,7 @@ class Policy_Trainer(pl.LightningModule):
             loss_obs = 0
             loss_hand_obs = 0
             gripper_cnt = 0
-            loss_progress=0
-
+            loss_progress= 0
             # action prediction
             act_dim = self.model.act_dim
             if self.act_pred:
@@ -293,28 +305,28 @@ class Policy_Trainer(pl.LightningModule):
   
 
                 # action smooth l1 loss
-                arm_action_preds = arm_action_preds.view(-1, act_len, act_dim-1)[attention_mask.flatten() > 0] # b,len,act_len,6 -> b*len,act_len,6
-                arm_action_target = arm_action_target.view(-1, act_len, act_dim-1)[attention_mask.flatten() > 0] # b,len,act_len,6 -> b*len,act_len,6
+                arm_action_preds = arm_action_preds.view(-1, act_len, act_dim)[attention_mask.flatten() > 0] # b,len,act_len,14 -> b*len,act_len,14
+                arm_action_target = arm_action_target.view(-1, act_len, act_dim)[attention_mask.flatten() > 0] # b,len,act_len,14 -> b*len,act_len,14
                 action_mask = action_mask.view(-1, act_len)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
-                arm_action_preds = arm_action_preds.view(-1, act_dim-1)[action_mask.flatten() > 0] # b*len*act_len, 6
-                arm_action_target = arm_action_target.view(-1, act_dim-1)[action_mask.flatten() > 0] # b*len*act_len, 6
+                arm_action_preds = arm_action_preds.view(-1, act_dim)[action_mask.flatten() > 0] # b*len*act_len, 14
+                arm_action_target = arm_action_target.view(-1, act_dim)[action_mask.flatten() > 0] # b*len*act_len, 14
                 loss_arm_act = torch.nn.SmoothL1Loss()(arm_action_preds, arm_action_target)
 
                 # gripper bce loss
-                gripper_action_preds = gripper_action_preds.view(-1, act_len)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
-                gripper_action_target = gripper_action_target.view(-1, act_len)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
-                gripper_action_preds = gripper_action_preds.flatten()[action_mask.flatten() > 0] # b*len*act_len
-                gripper_action_target = gripper_action_target.flatten()[action_mask.flatten() > 0] # b*len*act_len
-                bce_with_logits_loss = torch.nn.BCEWithLogitsLoss()
-                loss_gripper_act = bce_with_logits_loss(gripper_action_preds, gripper_action_target)
-                loss_act = loss_arm_act + loss_gripper_act * self.gripper_loss_ratio + loss_kl_act * self.kl_loss_ratio
+                # gripper_action_preds = gripper_action_preds.view(-1, act_len, 2)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
+                # gripper_action_target = gripper_action_target.view(-1, act_len, 2)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
+                # gripper_action_preds = gripper_action_preds.view(-1, 2)[action_mask.flatten() > 0] # b*len*act_len
+                # gripper_action_target = gripper_action_target.view(-1, 2)[action_mask.flatten() > 0] # b*len*act_len
+                # bce_with_logits_loss = torch.nn.BCEWithLogitsLoss()
+                # loss_gripper_act = bce_with_logits_loss(gripper_action_preds, gripper_action_target)
+                loss_act = loss_arm_act  + loss_kl_act * self.kl_loss_ratio
                 
                 # Compute gripper action acc
-                gripper_action_preds = torch.nn.Sigmoid()(gripper_action_preds) # Sigmoid function
-                gripper_action_preds = (gripper_action_preds > 0.5).float()
-                acc_gripper_act = torch.eq(gripper_action_preds, gripper_action_target).sum().float()
-                gripper_cnt = gripper_action_preds.shape[0]
-                acc_gripper_act /= gripper_cnt
+                # gripper_action_preds = torch.nn.Sigmoid()(gripper_action_preds) 
+                # gripper_action_preds = (gripper_action_preds > 0.5).float()
+                # acc_gripper_act = torch.eq(gripper_action_preds, gripper_action_target).sum().float()
+                # gripper_cnt = gripper_action_preds.shape[0]
+                # acc_gripper_act /= gripper_cnt
 
             # forward prediction
             if self.fwd_pred:
@@ -351,9 +363,9 @@ class Policy_Trainer(pl.LightningModule):
                 'loss': loss,
                 'loss_act': loss_act,
                 'loss_arm_act': loss_arm_act,
-                'loss_gripper_act': loss_gripper_act,
+                #'loss_gripper_act': loss_gripper_act,
                 'loss_kl_act': loss_kl_act,
-                'acc_gripper_act': acc_gripper_act,
+                #'acc_gripper_act': acc_gripper_act,
                 'loss_obs': loss_obs,
                 'loss_hand_obs': loss_hand_obs,
                 'loss_progress':loss_progress
@@ -372,16 +384,29 @@ class Policy_Trainer(pl.LightningModule):
         text=batch["text"]
         progress=batch["progress"]
         # Split arm and gripper action
-        arm_action = action[:, :, :, :6]  # (b, l, act_len, act_dim - 1)
-        gripper_action = action[:, :, :, 6]  # (b, l, act_len)
-        arm_action_target = torch.clone(arm_action)  # (b, l, act_len, act_dim - 1)
-        gripper_action_target = torch.clone(gripper_action)  # (b, l, act_len)
+        # left_arm_action = action[:, :, :, :6]
+        # right_arm_action = action[:, :, :, 7:13]
+        # arm_action = torch.cat([left_arm_action, right_arm_action], dim=-1) # (b, l, act_len, act_dim - 2)
+        arm_action = action[:, :, :, :14] # (b, l, act_len, act_dim)
+
+        # left_gripper_action = action[:, :, :, 6:7]  # (b, l, act_len, 1)
+        # right_gripper_action = action[:, :, :, 13:14]  # (b, l, act_len, 1)
+        # gripper_action = torch.cat([left_gripper_action, right_gripper_action], dim=-1) # (b, l, act_len, 2)
+
+        arm_action_target = torch.clone(arm_action)  # (b, l, act_len, act_dim)
+        # gripper_action_target = torch.clone(gripper_action)  # (b, l, act_len, 2)
 
         # Split arm and gripper state
-        arm_state = state[:, :, :6]  # (b, l, state_dim - 1)
-        gripper_state = state[:, :, 6].long()  # (b, l)
-        gripper_state = F.one_hot(gripper_state, num_classes=2).type_as(arm_state)  # (b, l, 2)
-
+        # left_arm_state = state[:, :, :6]
+        # right_arm_state = state[:, :, 7:13]
+        # arm_state = torch.cat([left_arm_state, right_arm_state], dim=-1) # (b, l, state_dim - 2)
+        arm_state = state
+        # gripper_state_left = state[:, :, 6].long()
+        # gripper_state_right = state[:, :, 13].long()
+        # gripper_state_left = F.one_hot(gripper_state_left, num_classes=2).type_as(arm_state)  # (b, l, 2)
+        # gripper_state_right = F.one_hot(gripper_state_right, num_classes=2).type_as(arm_state)  # (b, l, 2)
+        # gripper_state = torch.cat((gripper_state_left, gripper_state_right), dim=-1)  # (b, l, 4)
+        
         seq_len = arm_action.size(1)
         act_len = arm_action.size(2)
 
@@ -390,9 +415,9 @@ class Policy_Trainer(pl.LightningModule):
             'rgb': rgb,
             'hand_rgb': hand_rgb,
             'arm_action': arm_action,
-            'gripper_action': gripper_action,
+            # 'gripper_action': gripper_action,
             'arm_state': arm_state,
-            'gripper_state': gripper_state,
+            # 'gripper_state': gripper_state,
             'attention_mask': attention_mask,
             'text':text,
             'progress':progress
@@ -404,8 +429,8 @@ class Policy_Trainer(pl.LightningModule):
 
         obs_preds = prediction['obs_preds']
         obs_target = prediction['obs_target']
-        arm_action_preds = prediction['arm_action_preds']  # (b, l, act_len, act_dim - 1)
-        gripper_action_preds = prediction['gripper_action_preds']  # (b, l, act_len, 1)
+        arm_action_preds = prediction['arm_action_preds']  # (b, l, act_len, act_dim)
+        #gripper_action_preds = prediction['gripper_action_preds']  # (b, l, act_len, 2)
         obs_hand_preds = prediction['obs_hand_preds']
         obs_hand_target = prediction['obs_hand_target']
         action_mu_preds = prediction['action_mu_preds']  # (b * l, act_latent_dim)
@@ -433,28 +458,28 @@ class Policy_Trainer(pl.LightningModule):
 
 
             # action smooth l1 loss
-            arm_action_preds = arm_action_preds.view(-1, act_len, act_dim-1)[attention_mask.flatten() > 0] # b,len,act_len,6 -> b*len,act_len,6
-            arm_action_target = arm_action_target.view(-1, act_len, act_dim-1)[attention_mask.flatten() > 0] # b,len,act_len,6 -> b*len,act_len,6
+            arm_action_preds = arm_action_preds.view(-1, act_len, act_dim)[attention_mask.flatten() > 0] # b,len,act_len,14 -> b*len,act_len,14
+            arm_action_target = arm_action_target.view(-1, act_len, act_dim)[attention_mask.flatten() > 0] # b,len,act_len,14 -> b*len,act_len,14
             action_mask = action_mask.view(-1, act_len)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
-            arm_action_preds = arm_action_preds.view(-1, act_dim-1)[action_mask.flatten() > 0] # b*len*act_len, 6
-            arm_action_target = arm_action_target.view(-1, act_dim-1)[action_mask.flatten() > 0] # b*len*act_len, 6
+            arm_action_preds = arm_action_preds.view(-1, act_dim)[action_mask.flatten() > 0] # b*len*act_len, 14
+            arm_action_target = arm_action_target.view(-1, act_dim)[action_mask.flatten() > 0] # b*len*act_len, 14
             loss_arm_act = torch.nn.SmoothL1Loss()(arm_action_preds, arm_action_target)
 
             # gripper bce loss
-            gripper_action_preds = gripper_action_preds.view(-1, act_len)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
-            gripper_action_target = gripper_action_target.view(-1, act_len)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
-            gripper_action_preds = gripper_action_preds.flatten()[action_mask.flatten() > 0] # b*len*act_len
-            gripper_action_target = gripper_action_target.flatten()[action_mask.flatten() > 0] # b*len*act_len
-            bce_with_logits_loss = torch.nn.BCEWithLogitsLoss()
-            loss_gripper_act = bce_with_logits_loss(gripper_action_preds, gripper_action_target)
-            loss_act = loss_arm_act + loss_gripper_act * self.gripper_loss_ratio + loss_kl_act * self.kl_loss_ratio
+            # gripper_action_preds = gripper_action_preds.view(-1, act_len, 2)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
+            # gripper_action_target = gripper_action_target.view(-1, act_len, 2)[attention_mask.flatten() > 0] # b,len,act_len -> b*len,act_len
+            # gripper_action_preds = gripper_action_preds.view(-1, 2)[action_mask.flatten() > 0] # b*len*act_len
+            # gripper_action_target = gripper_action_target.view(-1, 2)[action_mask.flatten() > 0] # b*len*act_len
+            # bce_with_logits_loss = torch.nn.BCEWithLogitsLoss()
+            # loss_gripper_act = bce_with_logits_loss(gripper_action_preds, gripper_action_target)
+            loss_act = loss_arm_act  + loss_kl_act * self.kl_loss_ratio
             
             # Compute gripper action acc
-            gripper_action_preds = torch.nn.Sigmoid()(gripper_action_preds) 
-            gripper_action_preds = (gripper_action_preds > 0.5).float()
-            acc_gripper_act = torch.eq(gripper_action_preds, gripper_action_target).sum().float()
-            gripper_cnt = gripper_action_preds.shape[0]
-            acc_gripper_act /= gripper_cnt
+            # gripper_action_preds = torch.nn.Sigmoid()(gripper_action_preds) 
+            # gripper_action_preds = (gripper_action_preds > 0.5).float()
+            # acc_gripper_act = torch.eq(gripper_action_preds, gripper_action_target).sum().float()
+            # gripper_cnt = gripper_action_preds.shape[0]
+            # acc_gripper_act /= gripper_cnt
 
         # predict future image
         if self.fwd_pred:
@@ -492,9 +517,9 @@ class Policy_Trainer(pl.LightningModule):
             'loss': loss,
             'loss_act': loss_act,
             'loss_arm_act': loss_arm_act,
-            'loss_gripper_act': loss_gripper_act,
+            #'loss_gripper_act': loss_gripper_act,
             'loss_kl_act': loss_kl_act,
-            'acc_gripper_act': acc_gripper_act,
+            #'acc_gripper_act': acc_gripper_act,
             'loss_obs': loss_obs,
             'loss_hand_obs': loss_hand_obs,
             'loss_progress':loss_progress

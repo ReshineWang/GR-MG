@@ -18,7 +18,7 @@ class mug_hanging_easy(Base_task):
             self.id_list = [0,2]
 
         self.load_actors()
-        self.step_lim = 800
+        self.step_lim = 1500
     
     def pre_move(self):
         render_freq = self.render_freq

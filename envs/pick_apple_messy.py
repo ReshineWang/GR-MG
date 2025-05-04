@@ -17,7 +17,7 @@ class pick_apple_messy(Base_task):
         else:
             self.id_list = [2*i for i in range(5)]
         self.load_actors()
-        self.step_lim = 250
+        self.step_lim = 500
     
     def pre_move(self):
         render_freq = self.render_freq

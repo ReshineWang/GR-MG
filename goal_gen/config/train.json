@@ -1,7 +1,7 @@
 {
-    "exp_name": "train_goal_gen",
+    "exp_name": "blocks_stack_hard",
     "seed": 123,
-    "batch_size": 64,
+    "batch_size": 2,
     "learning_rate": 8e-5,
     "min_lr_scale": 1.0,
     "warmup_steps": 800,
